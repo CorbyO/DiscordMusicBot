@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Discord;
+using Discord.Addons.Music.Player;
+using Discord.Audio;
 using Discord.WebSocket;
 using Google.Apis.YouTube.v3.Data;
 
@@ -23,14 +25,14 @@ namespace MusicBot.Services
                 this.User = User;
             }
         }
-        public struct SearchResultData
+        public class SearchResultData
         {
             public SearchResult[] SearchResultOrNull;
-            public readonly IUser User;
-            public SearchResultData(IUser User)
+            public IUserMessage Message;
+            public SearchResultData()
             {
-                this.SearchResultOrNull = new Google.Apis.YouTube.v3.Data.SearchResult[5];
-                this.User = User;
+                this.SearchResultOrNull = new SearchResult[5];
+                this.Message = null;
             }
             public void Empty()
             {
@@ -48,16 +50,10 @@ namespace MusicBot.Services
                 }
             }
         }
-        public readonly struct GuildData
+        public class GuildData
         {
-            public readonly Queue<ReservedData> Queue;
-            public readonly Dictionary<ulong, SearchResultData> SearchTemp;
-
-            public GuildData()
-            {
-                Queue = new Queue<ReservedData>();
-                SearchTemp = new Dictionary<ulong, SearchResultData>();
-            }
+            public Queue<ReservedData> Queue { get; private set; } = new();
+            public Dictionary<ulong, SearchResultData> SearchTemp { get; private set; } = new();
         }
 
         private readonly Dictionary<ulong, GuildData> _guilds;

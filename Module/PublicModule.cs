@@ -1,13 +1,18 @@
-﻿using System.Text;
+﻿using System;
+using System.Diagnostics;
+using System.Numerics;
+using System.Text;
 using Discord;
 using Discord.Addons.Music.Common;
 using Discord.Addons.Music.Player;
 using Discord.Addons.Music.Source;
 using Discord.Audio;
 using Discord.Commands;
+using Discord.Interactions;
 using Google.Apis.YouTube.v3;
 using Google.Apis.YouTube.v3.Data;
 using MusicBot.Services;
+using RunMode = Discord.Commands.RunMode;
 
 namespace MusicBot.Module
 {
@@ -44,6 +49,7 @@ namespace MusicBot.Module
             }
             if(Context.User is IGuildUser guildUser)
             {
+                var guild = Context.Guild;
                 var voiceChannel = guildUser.VoiceChannel;
                 if (guildUser.VoiceChannel == null)
                 {
@@ -52,29 +58,39 @@ namespace MusicBot.Module
                 }
 
                 // youtube search only video and song
-                var result = await Search(text, Context.Guild, Context.User);
+                var results = await Search(text, guild, Context.User);
+
+                
+                var searchTemp = DatabaseService[guild.Id].SearchTemp;
+                var authorID = guildUser.Id;
+                if (!searchTemp.ContainsKey(authorID))
+                {
+                    searchTemp.Add(authorID, new DatabaseService.SearchResultData());
+                }
+
+                searchTemp[authorID].Fill(results);
 
                 // send message youtube search result to discord channel
-                var searchResultMessage = GetSearchResultMessage(result);
-                
-                await ReplyAsync(searchResultMessage);
+                var searchResultMessage = GetSearchResultMessage(results);
+
+                searchTemp[authorID].Message = await Context.Message.ReplyAsync(searchResultMessage);
             }
         }
 
-        [Command("1")]
-        public async Task Play1Async() => await PlayAsync(0);
+        [Command("1", RunMode = RunMode.Async)]
+        public Task Play1Async() => PlayAsync(0);
 
-        [Command("2")]
-        public async Task Play2Async() => await PlayAsync(1);
+        [Command("2", RunMode = RunMode.Async)]
+        public Task Play2Async() => PlayAsync(1);
+        
+        [Command("3", RunMode = RunMode.Async)]
+        public Task Play3Async() => PlayAsync(2);
 
-        [Command("3")]
-        public async Task Play3Async() => await PlayAsync(2);
+        [Command("4", RunMode = RunMode.Async)]
+        public Task Play4Async() => PlayAsync(3);
 
-        [Command("4")]
-        public async Task Play4Async() => await PlayAsync(3);
-
-        [Command("5")]
-        public async Task Play5Async() => await PlayAsync(4);
+        [Command("5", RunMode = RunMode.Async)]
+        public Task Play5Async() => PlayAsync(4);
 
         private async Task PlayAsync(int index)
         {
@@ -95,20 +111,29 @@ namespace MusicBot.Module
 
                 if (!searchTemp.ContainsKey(authorID))
                 {
-                    throw new CommandInvalidException("검색 한 적이 없습니다.");
+                    await ReplyAsync("먼저 '%검색' 명령어로 검색을 해 주세요.");
+                    return;
                 }
 
                 // enqueue
-                var result = searchTemp[authorID].SearchResultOrNull[index];
+                var searchResult = searchTemp[authorID];
+                var result = searchResult.SearchResultOrNull[index];
+
+                if (result == null)
+                {
+                    await ReplyAsync("먼저 '%검색' 명령어로 검색을 해 주세요.");
+                    return;
+                }
+
+                await searchResult.Message.ModifyAsync(x => x.Content = $"대기 목록에 추가: '{result.Snippet.Title}'");
+
                 guild.Queue.Enqueue(new DatabaseService.ReservedData(result, author));
 
-                // join voice channel
                 var audioClient = await voiceChannel.ConnectAsync();
-
                 PlayQueue(audioClient, guild.Queue);
             }
         }
-
+        
         private async Task<IList<Google.Apis.YouTube.v3.Data.SearchResult>> Search(string keyword, IGuild guild, IUser user)
         {
             var searchListRequest = YouTubeService.Search.List("snippet");
@@ -118,15 +143,6 @@ namespace MusicBot.Module
             searchListRequest.VideoCategoryId = "10";
 
             var searchListResponse = await searchListRequest.ExecuteAsync();
-
-            var searchTemp = DatabaseService[guild.Id].SearchTemp;
-            var authorID = user.Id;
-            if (!searchTemp.ContainsKey(authorID))
-            {
-                searchTemp.Add(authorID, new DatabaseService.SearchResultData(user));
-            }
-
-            searchTemp[authorID].Fill(searchListResponse.Items);
 
             return searchListResponse.Items;
         }
@@ -145,27 +161,27 @@ namespace MusicBot.Module
 
         private async void PlayQueue(IAudioClient audioClient, Queue<DatabaseService.ReservedData> queue)
         {
-            using (audioClient)
+            using (var discordStream = audioClient.CreatePCMStream(AudioApplication.Music))
             {
-                do
+                var player = new AudioPlayer(audioClient);
+                while (queue.Count > 0)
                 {
-                    var reservedData = queue.Peek();
+                    var reservedData = queue.Dequeue();
 
                     // youtube audio download
-                    AudioPlayer audioPlayer = new AudioPlayer();
                     string query = $"https://www.youtube.com/watch?v={reservedData.SearchResult.Id.VideoId}";
                     bool wellFormedUri = Uri.IsWellFormedUriString(query, UriKind.Absolute);
+
                     List<AudioTrack> tracks = await TrackLoader.LoadAudioTrack(query, fromUrl: wellFormedUri);
+
+                    if (tracks.Count == 0) return;
 
                     // Pick the first entry and use AudioPlayer.StartTrack to play it on Thread Pool
                     AudioTrack firstTrack = tracks.ElementAt(0);
 
-                    // OR
                     // await track to finish playing
-                    await audioPlayer.StartTrackAsync(firstTrack);
-
-                    queue.Dequeue();
-                } while (queue.Count > 0);
+                    await player.StartTrackAsync(firstTrack);
+                }
             }
         }
     }
