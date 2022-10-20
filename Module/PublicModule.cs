@@ -129,8 +129,12 @@ namespace MusicBot.Module
 
                 guild.Queue.Enqueue(new DatabaseService.ReservedData(result, author));
 
-                var audioClient = await voiceChannel.ConnectAsync();
-                PlayQueue(audioClient, guild.Queue);
+                if(!guild.IsPlaying)
+                {
+                    guild.IsPlaying = true;
+                    var audioClient = await voiceChannel.ConnectAsync();
+                    PlayQueue(audioClient, guild.Queue);
+                }
             }
         }
         
@@ -172,17 +176,16 @@ namespace MusicBot.Module
                     string query = $"https://www.youtube.com/watch?v={reservedData.SearchResult.Id.VideoId}";
                     bool wellFormedUri = Uri.IsWellFormedUriString(query, UriKind.Absolute);
 
-                    List<AudioTrack> tracks = await TrackLoader.LoadAudioTrack(query, fromUrl: wellFormedUri);
+                    var tracks = await TrackLoader.LoadAudioTrack(query, fromUrl: wellFormedUri);
 
-                    if (tracks.Count == 0) return;
-
-                    // Pick the first entry and use AudioPlayer.StartTrack to play it on Thread Pool
-                    AudioTrack firstTrack = tracks.ElementAt(0);
-
-                    // await track to finish playing
-                    await player.StartTrackAsync(firstTrack);
+                    foreach (var track in tracks)
+                    {
+                        await ReplyAsync($"노래를 실행 합니다: {track.Info.Title}");
+                        await player.StartTrackAsync(track);
+                    }
                 }
             }
+            DatabaseService[Context.Guild.Id].IsPlaying = false;
         }
     }
 }
