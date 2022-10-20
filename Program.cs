@@ -5,6 +5,7 @@ using Discord.Commands;
 using Google.Apis.YouTube.v3;
 using Google.Apis.Services;
 using MusicBot.Services;
+using System.Diagnostics;
 
 namespace MusicBot
 {
@@ -15,6 +16,10 @@ namespace MusicBot
 
         public async Task MainAsync()
         {
+            RequireFile("opus.dll");
+            RequireFile("ffmpeg.exe");
+            RequireFile("youtube-dl.exe");
+            RequireFile("libsodium.dll");
             using (var services = ConfigureServices())
             {
                 var client = services.GetRequiredService<DiscordSocketClient>();
@@ -62,6 +67,12 @@ namespace MusicBot
                 }))
                 .AddSingleton<DatabaseService>()
                 .BuildServiceProvider();
+        }
+
+        private void RequireFile(string filePath)
+        {
+            var path = Path.Combine(Environment.CurrentDirectory, filePath);
+            Debug.Assert(File.Exists(path), $"Missing file: {path}");
         }
     }
 }
