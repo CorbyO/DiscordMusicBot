@@ -11,6 +11,7 @@ using Discord.Commands;
 using Discord.Interactions;
 using Google.Apis.YouTube.v3;
 using Google.Apis.YouTube.v3.Data;
+using MusicBot.Extension;
 using MusicBot.Services;
 using RunMode = Discord.Commands.RunMode;
 
@@ -59,7 +60,6 @@ namespace MusicBot.Module
 
                 // youtube search only video and song
                 var results = await Search(text, guild, Context.User);
-
                 
                 var searchTemp = DatabaseService[guild.Id].SearchTemp;
                 var authorID = guildUser.Id;
@@ -73,7 +73,7 @@ namespace MusicBot.Module
                 // send message youtube search result to discord channel
                 var searchResultMessage = GetSearchResultMessage(results);
 
-                searchTemp[authorID].Message = await Context.Message.ReplyAsync(searchResultMessage);
+                searchTemp[authorID].Message = await Context.Message.ReplyAsync(await searchResultMessage);
             }
         }
 
@@ -91,6 +91,23 @@ namespace MusicBot.Module
 
         [Command("5", RunMode = RunMode.Async)]
         public Task Play5Async() => PlayAsync(4);
+        [Command("큐")]
+        [Alias("ㅋ", "zb", "z", "Queue", "queue")]
+
+        public Task PrintQueue()
+        {
+            var queue = DatabaseService[Context.Guild.Id].Queue;
+            if (queue.Count == 0) return ReplyAsync("대기중인 노래 리스트가 없습니다.");
+            
+            StringBuilder sb = new("대기중인 노래 리스트\n");
+            
+            foreach (var i in DatabaseService[Context.Guild.Id].Queue)
+            {
+                sb.AppendLine(i.SearchResult.Snippet.Title);
+            }
+            
+            return ReplyAsync(sb.ToString());
+        }
 
         private async Task PlayAsync(int index)
         {
@@ -141,9 +158,13 @@ namespace MusicBot.Module
         private async Task<IList<Google.Apis.YouTube.v3.Data.SearchResult>> Search(string keyword, IGuild guild, IUser user)
         {
             var searchListRequest = YouTubeService.Search.List("snippet");
-            searchListRequest.Q = keyword;
+            searchListRequest.Q = $"\"{keyword}\"";
             searchListRequest.MaxResults = 5;
             searchListRequest.Type = "video";
+            searchListRequest.VideoDefinition = SearchResource.ListRequest.VideoDefinitionEnum.Any;
+            searchListRequest.VideoDimension = SearchResource.ListRequest.VideoDimensionEnum.Value2d;
+            searchListRequest.VideoCaption = SearchResource.ListRequest.VideoCaptionEnum.ClosedCaption;
+            searchListRequest.Order = SearchResource.ListRequest.OrderEnum.ViewCount;
             searchListRequest.VideoCategoryId = "10";
 
             var searchListResponse = await searchListRequest.ExecuteAsync();
@@ -151,16 +172,55 @@ namespace MusicBot.Module
             return searchListResponse.Items;
         }
 
-        private string GetSearchResultMessage(IList<Google.Apis.YouTube.v3.Data.SearchResult> searchResults)
+        private async Task<string> GetSearchResultMessage(IList<Google.Apis.YouTube.v3.Data.SearchResult> searchResults)
         {
-            var sb = new StringBuilder();
-
-            for (int i = 0; i < searchResults.Count; i++)
+            var sb = new StringBuilder("**검색 결과**\n");
+            var count = searchResults.Count;
+            var ids = new string[count];
+            var list = YouTubeService.Videos.List("contentDetails");
+            
+            for (int i = 0; i < count; i++)
             {
-                sb.Append($"{i + 1}. {searchResults[i].Snippet.Title}\n");
+                ids[i] = searchResults[i].Id.VideoId;
+            }
+
+            list.Id = ids;
+
+            var listResult = await list.ExecuteAsync();
+
+            for (int i = 0; i < count; i++)
+            {
+                var result = listResult.Items[i];
+                var time = result.ContentDetails.Duration
+                    .Replace("PT", null)
+                    .Replace("H", "시 ")
+                    .Replace("M", "분 ")
+                    .Replace("S", "초");
+
+                var title = searchResults[i].Snippet.Title;
+                sb.Append($"> {ToEmoji(i + 1)} `{title.Omit(40, Encoding.ASCII)}` `{time}`\n");
             }
 
             return sb.ToString();
+        }
+
+        private string ToEmoji(int number)
+        {
+            switch(number)
+            {
+                case 0: return ":zero:";
+                case 1: return ":one:";
+                case 2: return ":two:";
+                case 3: return ":three:";
+                case 4: return ":four:";
+                case 5: return ":five:";
+                case 6: return ":six:";
+                case 7: return ":seven:";
+                    case 8: return ":eight:";
+                case 9: return ":nine:";
+                case 10: return ":ten:";
+                default: return number.ToString();
+            }
         }
 
         private async void PlayQueue(IAudioClient audioClient, Queue<DatabaseService.ReservedData> queue)
