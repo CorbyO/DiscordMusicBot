@@ -41,13 +41,36 @@ namespace MusicBot.Services
                     SearchResultOrNull[i] = null;
                 }
             }
+            public bool IsEmpty()
+            {
+                for (int i = 0; i < 5; i++)
+                {
+                    if(SearchResultOrNull != null)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
             public void Fill(IList<SearchResult> searchResults) 
             {
-                Debug.Assert(searchResults.Count >= 5, "Search results must be at least 5");
-                for (int i = 0; i < 5; i++)
+                var repeat = searchResults.Count < 5 ? searchResults.Count : 5 ;
+                for (int i = 0; i < repeat; i++)
                 {
                     SearchResultOrNull[i] = searchResults[i];
                 }
+            }
+            public bool IsFill()
+            {
+                for (int i = 0; i < 5; i++)
+                {
+                    if (SearchResultOrNull[i] == null)
+                    {
+                        return false;
+                    }
+                }
+                return true;
             }
         }
         public class GuildData

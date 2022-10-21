@@ -9,13 +9,37 @@ namespace MusicBot.Extension
 {
     public static class StringExtension
     {
-        public static string Omit(this string value, int length, Encoding enc = null)
+        public static string Omit(this string value, int length)
         {
-            var bytes = enc.GetBytes(value);
-            if (bytes.Length <= length) return value;
-            var realSize = length - 2;
+            if (value.Length <= length)
+                return value;
+            
+            return value.Substring(0, length - 1) + '…';
+        }
 
-            return $"{Encoding.Default.GetString(bytes, 0, realSize)}..";
+        public static string Remove(this string value, string remove)
+        {
+            StringBuilder sb = new();
+
+            var start = remove[0];
+            var end = remove[1];
+
+            bool inRange = false;
+            foreach (var c in value)
+            {
+                if (c == start) inRange = true;
+                else if (c == end) 
+                { 
+                    inRange = false; 
+                    continue; 
+                }
+
+                if (inRange) continue;
+
+                sb.Append(c);
+            }
+
+            return sb.ToString();
         }
     }
 }

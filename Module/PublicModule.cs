@@ -1,18 +1,17 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Numerics;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using Discord;
 using Discord.Addons.Music.Common;
 using Discord.Addons.Music.Player;
-using Discord.Addons.Music.Source;
 using Discord.Audio;
 using Discord.Commands;
 using Discord.Interactions;
+using Discord.WebSocket;
 using Google.Apis.YouTube.v3;
-using Google.Apis.YouTube.v3.Data;
 using MusicBot.Extension;
 using MusicBot.Services;
+using static System.Net.Mime.MediaTypeNames;
 using RunMode = Discord.Commands.RunMode;
 
 namespace MusicBot.Module
@@ -22,137 +21,108 @@ namespace MusicBot.Module
         public YouTubeService YouTubeService { get; set; }
         public DatabaseService DatabaseService { get; set; }
 
+        private Emoji _process = new Emoji("💬");
+        private Emoji _error = new Emoji("⛔");
+        private Emoji _success = new Emoji("✅");
 
         [Command("ping")]
         [Alias("pong", "hello")]
         public Task PingAsync()
-            => ReplyAsync("pong!");
+            => SendAnswer(_success, "Pong");
+        
+        [Command("검색")]
+        [Alias("ㄳ", "ㄱㅅ", "ㄱ", "rjator", "rt", "r", "search")]
+        public Task SearchAsync()
+            => SendAnswer(_error, "검색할 텍스트와 같이 명령해 주세요.");
 
         [Command("검색")]
         [Alias("ㄳ","ㄱㅅ", "ㄱ", "rjator", "rt", "r", "search")]
-        public async Task SearchAsync([Remainder] string text)
+        public Task SearchAsync([Remainder] string text)
         {
-            if (text == null)
-            {
-                await ReplyAsync("검색할 텍스트와 같이 명령해 주세요.");
-                return;
-            }
-            text = text.TrimStart().TrimEnd();
-            if (text.Length == 0) 
-            {
-                await ReplyAsync("검색할 텍스트와 같이 명령해 주세요.");
-                return;
-            }
-            if (text.Length > 100) 
-            {
-                await ReplyAsync("검색할 텍스트는 100자 이하로 해 주세요.");
-                return;
-            }
-            if(Context.User is IGuildUser guildUser)
-            {
-                var guild = Context.Guild;
-                var voiceChannel = guildUser.VoiceChannel;
-                if (guildUser.VoiceChannel == null)
-                {
-                    await ReplyAsync("음성 채널에 들어가 있어야 합니다.");
-                    return;
-                }
+            Context.Message.AddReactionAsync(_process);
+            var guildUser = Context.User as IGuildUser;
+            var guild = Context.Guild;
 
-                // youtube search only video and song
-                var results = await Search(text, guild, Context.User);
-                
-                var searchTemp = DatabaseService[guild.Id].SearchTemp;
-                var authorID = guildUser.Id;
-                if (!searchTemp.ContainsKey(authorID))
-                {
-                    searchTemp.Add(authorID, new DatabaseService.SearchResultData());
-                }
+            if (guildUser == null) return SendAnswer(_error, "알 수 없는 오류");
+            if (text.Length > 100) return SendAnswer(_error, "검색할 텍스트는 100자 이하로 해 주세요.");
+            if (guildUser.VoiceChannel == null) return SendAnswer(_error, "음성 채널에 들어가 있어야 합니다.");
 
-                searchTemp[authorID].Fill(results);
+            var results = Search(text, guild, Context.User).Result;
+            if (results.Count == 0) return SendAnswer(_error, "검색 결과가 없습니다.");
 
-                // send message youtube search result to discord channel
-                var searchResultMessage = GetSearchResultMessage(results);
+            var search = DatabaseService[guild.Id].SearchTemp;
+            var authorID = guildUser.Id;
+            if (!search.TryGetValue(authorID, out var resultTemp))
+                search.Add(authorID, resultTemp = new DatabaseService.SearchResultData());
 
-                searchTemp[authorID].Message = await Context.Message.ReplyAsync(await searchResultMessage);
-            }
+            resultTemp.Fill(results);
+            var task = SendAnswer(_success, ToEmbedFieldBuilder(text, results).Result);
+
+            resultTemp.Message = task.Result;
+            return task;
         }
 
-        [Command("1", RunMode = RunMode.Async)]
-        public Task Play1Async() => PlayAsync(0);
-
-        [Command("2", RunMode = RunMode.Async)]
-        public Task Play2Async() => PlayAsync(1);
-        
-        [Command("3", RunMode = RunMode.Async)]
-        public Task Play3Async() => PlayAsync(2);
-
-        [Command("4", RunMode = RunMode.Async)]
-        public Task Play4Async() => PlayAsync(3);
-
-        [Command("5", RunMode = RunMode.Async)]
-        public Task Play5Async() => PlayAsync(4);
         [Command("큐")]
         [Alias("ㅋ", "zb", "z", "Queue", "queue")]
-
         public Task PrintQueue()
         {
             var queue = DatabaseService[Context.Guild.Id].Queue;
             if (queue.Count == 0) return ReplyAsync("대기중인 노래 리스트가 없습니다.");
-            
+
             StringBuilder sb = new("대기중인 노래 리스트\n");
-            
+
             foreach (var i in DatabaseService[Context.Guild.Id].Queue)
             {
                 sb.AppendLine(i.SearchResult.Snippet.Title);
             }
-            
+
             return ReplyAsync(sb.ToString());
         }
 
-        private async Task PlayAsync(int index)
+        [Command("1", RunMode = RunMode.Async)] public Task Play1Async() => PlayAsync(0);
+        [Command("2", RunMode = RunMode.Async)] public Task Play2Async() => PlayAsync(1);
+        [Command("3", RunMode = RunMode.Async)] public Task Play3Async() => PlayAsync(2);
+        [Command("4", RunMode = RunMode.Async)] public Task Play4Async() => PlayAsync(3);
+        [Command("5", RunMode = RunMode.Async)] public Task Play5Async() => PlayAsync(4);
+
+        private Task PlayAsync(int index)
         {
-            if(Context.User is IGuildUser guildUser)
+            Context.Message.AddReactionAsync(_process);
+
+            if (!(Context.User is IGuildUser guildUser)) return SendAnswer(_error, "알 수 없는 오류");
+
+            var guild = DatabaseService[Context.Guild.Id];
+            // check for search result
+            var authorID = guildUser.Id;
+            if (!guild.SearchTemp.TryGetValue(authorID, out var searchResult)) return SendAnswer(_error, "먼저 '%검색' 명령어로 검색을 해 주세요.");
+
+            var result = searchResult.SearchResultOrNull[index];
+            searchResult.Empty();
+            if (result == null) return SendAnswer(_error, "먼저 '%검색' 명령어로 검색을 해 주세요.");
+
+            var voiceChannel = guildUser.VoiceChannel;
+            if (voiceChannel == null) return SendAnswer(_error, "음성 채널에 들어가 있어야 합니다.");
+
+            var temp = SendAnswer(_success, searchResult.Message, (x) =>
             {
-                var voiceChannel = guildUser.VoiceChannel;
-                if (guildUser.VoiceChannel == null)
+                x.Embeds = new Embed[]
                 {
-                    await ReplyAsync("음성 채널에 들어가 있어야 합니다.");
-                    return;
-                }
+                    new EmbedBuilder()
+                        .WithAuthor("노래 선택")
+                        .WithTitle($"{result?.Snippet?.Title?.Trim()}")
+                        .WithThumbnailUrl(result?.Snippet?.Thumbnails?.Medium?.Url)
+                        .WithColor(Color.DarkRed)
+                        .WithDescription($"[{result?.Snippet?.ChannelTitle}](https://www.youtube.com/channel/{result?.Snippet?.ChannelId})")
+                        .WithUrl($"https://www.youtube.com/watch?v={result?.Id?.VideoId}")
+                        .WithFooter("선택한 노래가 대기열에 추가 되었습니다.")
+                        .Build()
+                };
+            });
 
-                var guild = DatabaseService[Context.Guild.Id];
-                // check for search result
-                var searchTemp = guild.SearchTemp;
-                var author = Context.User;
-                var authorID = author.Id;
+            // enqueue
+            EnqueueAndPlay(new DatabaseService.ReservedData(result, guildUser), voiceChannel);
 
-                if (!searchTemp.ContainsKey(authorID))
-                {
-                    await ReplyAsync("먼저 '%검색' 명령어로 검색을 해 주세요.");
-                    return;
-                }
-
-                // enqueue
-                var searchResult = searchTemp[authorID];
-                var result = searchResult.SearchResultOrNull[index];
-
-                if (result == null)
-                {
-                    await ReplyAsync("먼저 '%검색' 명령어로 검색을 해 주세요.");
-                    return;
-                }
-
-                await searchResult.Message.ModifyAsync(x => x.Content = $"대기 목록에 추가: '{result.Snippet.Title}'");
-
-                guild.Queue.Enqueue(new DatabaseService.ReservedData(result, author));
-
-                if(!guild.IsPlaying)
-                {
-                    guild.IsPlaying = true;
-                    var audioClient = await voiceChannel.ConnectAsync();
-                    PlayQueue(audioClient, guild.Queue);
-                }
-            }
+            return temp;
         }
         
         private async Task<IList<Google.Apis.YouTube.v3.Data.SearchResult>> Search(string keyword, IGuild guild, IUser user)
@@ -172,54 +142,55 @@ namespace MusicBot.Module
             return searchListResponse.Items;
         }
 
-        private async Task<string> GetSearchResultMessage(IList<Google.Apis.YouTube.v3.Data.SearchResult> searchResults)
+        private async Task<EmbedBuilder> ToEmbedFieldBuilder(string keyword, IList<Google.Apis.YouTube.v3.Data.SearchResult> searchResults)
         {
-            var sb = new StringBuilder("**검색 결과**\n");
             var count = searchResults.Count;
             var ids = new string[count];
             var list = YouTubeService.Videos.List("contentDetails");
-            
             for (int i = 0; i < count; i++)
             {
                 ids[i] = searchResults[i].Id.VideoId;
             }
-
             list.Id = ids;
-
             var listResult = await list.ExecuteAsync();
 
+            var fields = new EmbedFieldBuilder[count];
             for (int i = 0; i < count; i++)
             {
                 var result = listResult.Items[i];
                 var time = result.ContentDetails.Duration
                     .Replace("PT", null)
-                    .Replace("H", "시 ")
-                    .Replace("M", "분 ")
-                    .Replace("S", "초");
+                    .Replace("H", "h ")
+                    .Replace('M', ':')
+                    .Replace("S", null);
 
-                var title = searchResults[i].Snippet.Title;
-                sb.Append($"> {ToEmoji(i + 1)} `{title.Omit(40, Encoding.ASCII)}` `{time}`\n");
+                var title = searchResults[i].Snippet.Title
+                    .Remove("[]")
+                    .Omit(40);
+
+                fields[i] = new EmbedFieldBuilder()
+                    .WithName($"{(i + 1).ToEmoji()} {title}")
+                    .WithValue($"`{time}`");
             }
 
-            return sb.ToString();
+            return new EmbedBuilder()
+                .WithAuthor("노래 검색")
+                .WithTitle($"키워드: `{keyword}`")
+                .WithFields(fields)
+                .WithColor(Color.Red)
+                .WithThumbnailUrl("https://lh3.googleusercontent.com/DMPqTbcN-R_kPwzF0qg9zZH8UPLtVBoqrDQ_63zhmIq5NUBrllM5Xkj2h7Bi0X_KPzJ6_sTvRFIXWB2HIEeFd2EtnRyUbs0uWTPey3MYtSICaibNBfcA=v0-s1050")
+                .WithFooter("듣고 싶은 노래를 %숫자 로 선택 해주세요.");
         }
 
-        private string ToEmoji(int number)
+        private async void EnqueueAndPlay(DatabaseService.ReservedData reservedData, IVoiceChannel voiceChannel)
         {
-            switch(number)
+            var guild = DatabaseService[Context.Guild.Id];
+            guild.Queue.Enqueue(reservedData);
+            if (!guild.IsPlaying)
             {
-                case 0: return ":zero:";
-                case 1: return ":one:";
-                case 2: return ":two:";
-                case 3: return ":three:";
-                case 4: return ":four:";
-                case 5: return ":five:";
-                case 6: return ":six:";
-                case 7: return ":seven:";
-                    case 8: return ":eight:";
-                case 9: return ":nine:";
-                case 10: return ":ten:";
-                default: return number.ToString();
+                guild.IsPlaying = true;
+                var audioClient = await voiceChannel.ConnectAsync();
+                PlayQueue(audioClient, guild.Queue);
             }
         }
 
@@ -240,12 +211,50 @@ namespace MusicBot.Module
 
                     foreach (var track in tracks)
                     {
-                        await ReplyAsync($"노래를 실행 합니다: {track.Info.Title}");
+                        await ReplyAsync(embed: new EmbedBuilder()
+                            .WithAuthor("노래 재생")
+                            .WithTitle(track.Info.Title)
+                            .WithUrl(query)
+                            .WithThumbnailUrl(track.Info.ThumbnailUrl)
+                            .WithColor(Color.Blue)
+                            .WithDescription(track.Info.Duration + " 초")
+                            .Build());
                         await player.StartTrackAsync(track);
                     }
                 }
             }
             DatabaseService[Context.Guild.Id].IsPlaying = false;
+        }
+
+        private async Task<IUserMessage> SendAnswer(Emoji emoji, string message)
+        {
+            var target = Context.Message;
+
+            _ = target.AddReactionAsync(emoji);
+            return await target.ReplyAsync(message);
+        }
+
+        private async Task<IUserMessage> SendAnswer(Emoji emoji, EmbedBuilder embedBuilder)
+        {
+            var target = Context.Message;
+
+            _ = target.AddReactionAsync(emoji);
+            return await target.ReplyAsync(embed: embedBuilder.Build());
+        }
+
+        private async Task<IUserMessage> SendAnswer(Emoji emoji, IUserMessage userMessage, string message)
+        {
+            _ = Context.Message.AddReactionAsync(emoji);
+            await userMessage.ModifyAsync(x => x.Content = message);
+            return userMessage;
+        }
+
+        private async Task<IUserMessage> SendAnswer(Emoji emoji, IUserMessage userMessage, Action<MessageProperties> action)
+        {
+            _ = Context.Message.AddReactionAsync(emoji);
+
+            await userMessage.ModifyAsync(action);
+            return userMessage;
         }
     }
 }
