@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
+using System.Xml;
 using Discord;
 using Discord.Addons.Music.Common;
 using Discord.Addons.Music.Player;
@@ -158,15 +159,8 @@ namespace MusicBot.Module
             for (int i = 0; i < count; i++)
             {
                 var result = listResult.Items[i];
-                var time = result.ContentDetails.Duration
-                    .Replace("PT", null)
-                    .Replace("H", "h ")
-                    .Replace('M', ':')
-                    .Replace("S", null);
-
-                var title = searchResults[i].Snippet.Title
-                    .Remove("[]")
-                    .Omit(40);
+                var time = XmlConvert.ToTimeSpan(result.ContentDetails.Duration).ToMMSS();
+                var title = searchResults[i].Snippet.Title.Remove("[]").Omit(40);
 
                 fields[i] = new EmbedFieldBuilder()
                     .WithName($"{(i + 1).ToEmoji()} {title}")
@@ -217,7 +211,7 @@ namespace MusicBot.Module
                             .WithUrl(query)
                             .WithThumbnailUrl(track.Info.ThumbnailUrl)
                             .WithColor(Color.Blue)
-                            .WithDescription(track.Info.Duration + " 초")
+                            .WithDescription(track.Info.Duration.ToInt().ToSecond().ToMMSS())
                             .Build());
                         await player.StartTrackAsync(track);
                     }

@@ -27,5 +27,10 @@ namespace MusicBot.Extension
                 default: return value.ToString();
             }
         }
+
+        public static TimeSpan ToSecond(this int value)
+        {
+            return TimeSpan.FromSeconds(value);
+        }
     }
 }

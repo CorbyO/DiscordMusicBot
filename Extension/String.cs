@@ -41,5 +41,13 @@ namespace MusicBot.Extension
 
             return sb.ToString();
         }
+
+        public static int ToInt(this string value)
+        {
+            if (int.TryParse(value, out int result))
+                return result;
+
+            throw new CommandInvalidException("Invalid number.");
+        }
     }
 }
