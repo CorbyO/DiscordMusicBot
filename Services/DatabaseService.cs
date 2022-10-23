@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Addons.Music.Player;
+using Discord.Addons.Music.Source;
 using Discord.Audio;
 using Discord.WebSocket;
 using Google.Apis.YouTube.v3.Data;
@@ -77,14 +78,13 @@ namespace MusicBot.Services
         }
         public class GuildData
         {
-            public Queue<ReservedData> Queue { get; private set; } = new();
+            public Queue<AudioTrack> Queue { get; private set; } = new();
             public Dictionary<ulong, SearchResultData> SearchTemp { get; private set; } = new();
-            public AudioPlayer AudioPlayer { get; set; } = null;
-            public bool IsPlaying => AudioPlayer != null;
+            public AudioPlayer AudioPlayer { get; private set; } = new AudioPlayer();
         }
 
         private readonly Dictionary<ulong, GuildData> _guilds;
-
+        
         public DatabaseService(DiscordSocketClient discord)
         {
             _discord = discord;

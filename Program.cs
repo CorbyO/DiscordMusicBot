@@ -66,6 +66,7 @@ namespace MusicBot
                     ApplicationName = this.GetType().ToString()
                 }))
                 .AddSingleton<DatabaseService>()
+                .AddSingleton<DJService>()
                 .BuildServiceProvider();
         }
 
