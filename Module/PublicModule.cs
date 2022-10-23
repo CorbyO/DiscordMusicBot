@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Xml;
@@ -25,6 +26,32 @@ namespace MusicBot.Module
         private Emoji _process = new Emoji("💬");
         private Emoji _error = new Emoji("⛔");
         private Emoji _success = new Emoji("✅");
+
+        [Command("도움말")]
+        [Alias("ㄷㅇㅁ", "ㄷ", "ehdnaakf", "eda", "e", "?")]
+        public Task PrintHelp()
+        {
+            var embed = new EmbedFieldBuilder[4]
+            {
+                new EmbedFieldBuilder()
+                    .WithName(":small_blue_diamond: %검색 <검색어>: 검색어를 유튜브에서 찾습니다.")
+                    .WithValue("줄임: ㄳ, ㄱㅅ, ㄱ, rjator, rt, r, search"),
+                new EmbedFieldBuilder()
+                    .WithName(":small_blue_diamond: %숫자: 검색 목록에서 항목을 고릅니다.")
+                    .WithValue("줄임: "),
+                new EmbedFieldBuilder()
+                    .WithName(":small_blue_diamond: %큐: 실행 예정 목록을 불러옵니다.")
+                    .WithValue("줄임: ㅋ, zb, z, Queue, queue"),
+                new EmbedFieldBuilder()
+                    .WithName(":small_blue_diamond: %스킵: 현재 실행중인 노래를 넘깁니다.")
+                    .WithValue("줄임: ㅅ, ㅅㅋ, tmzlq, t, tz")
+            };
+            return SendAnswer(_success, new EmbedBuilder()
+                .WithColor(Color.Orange)
+                .WithTitle("도움말")
+                .WithDescription("명령어의 목록 입니다.")
+                .WithFields(embed));
+        }
 
         [Command("ping")]
         [Alias("pong", "hello")]
@@ -125,7 +152,22 @@ namespace MusicBot.Module
 
             return temp;
         }
-        
+
+        [Command("스킵")]
+        [Alias("ㅅ", "ㅅㅋ", "tmzlq", "t", "tz")]
+        public Task SkipQueue()
+        {
+            Context.Message.AddReactionAsync(_process);
+            var audioPlayer = DatabaseService[Context.Guild.Id].AudioPlayer;
+            if (audioPlayer == null) return SendAnswer(_error, "재생 중이 아닙니다.");
+            else
+            {
+                audioPlayer.Stop();
+                return SendAnswer(_success, "노래를 스킵했습니다.");
+            }
+        }
+
+
         private async Task<IList<Google.Apis.YouTube.v3.Data.SearchResult>> Search(string keyword, IGuild guild, IUser user)
         {
             var searchListRequest = YouTubeService.Search.List("snippet");
@@ -182,7 +224,6 @@ namespace MusicBot.Module
             guild.Queue.Enqueue(reservedData);
             if (!guild.IsPlaying)
             {
-                guild.IsPlaying = true;
                 var audioClient = await voiceChannel.ConnectAsync();
                 PlayQueue(audioClient, guild.Queue);
             }
@@ -190,9 +231,10 @@ namespace MusicBot.Module
 
         private async void PlayQueue(IAudioClient audioClient, Queue<DatabaseService.ReservedData> queue)
         {
+            var guild = DatabaseService[Context.Guild.Id];
             using (var discordStream = audioClient.CreatePCMStream(AudioApplication.Music))
             {
-                var player = new AudioPlayer(audioClient);
+                guild.AudioPlayer = new AudioPlayer(audioClient);
                 while (queue.Count > 0)
                 {
                     var reservedData = queue.Dequeue();
@@ -213,11 +255,11 @@ namespace MusicBot.Module
                             .WithColor(Color.Blue)
                             .WithDescription(track.Info.Duration.ToInt().ToSecond().ToMMSS())
                             .Build());
-                        await player.StartTrackAsync(track);
+                        await guild.AudioPlayer.StartTrackAsync(track);
                     }
                 }
+                guild.AudioPlayer = null;
             }
-            DatabaseService[Context.Guild.Id].IsPlaying = false;
         }
 
         private async Task<IUserMessage> SendAnswer(Emoji emoji, string message)
@@ -230,10 +272,12 @@ namespace MusicBot.Module
 
         private async Task<IUserMessage> SendAnswer(Emoji emoji, EmbedBuilder embedBuilder)
         {
+            Debug.Assert(Context.Message != null, "Context.Message is null");
             var target = Context.Message;
+            var e = embedBuilder.Build();
 
             _ = target.AddReactionAsync(emoji);
-            return await target.ReplyAsync(embed: embedBuilder.Build());
+            return await target.ReplyAsync(embed: e);
         }
 
         private async Task<IUserMessage> SendAnswer(Emoji emoji, IUserMessage userMessage, string message)

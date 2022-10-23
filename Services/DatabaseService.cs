@@ -77,7 +77,8 @@ namespace MusicBot.Services
         {
             public Queue<ReservedData> Queue { get; private set; } = new();
             public Dictionary<ulong, SearchResultData> SearchTemp { get; private set; } = new();
-            public bool IsPlaying { get; set; } = false;
+            public AudioPlayer AudioPlayer { get; set; } = null;
+            public bool IsPlaying => AudioPlayer != null;
         }
 
         private readonly Dictionary<ulong, GuildData> _guilds;
