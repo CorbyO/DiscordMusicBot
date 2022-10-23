@@ -189,7 +189,8 @@ namespace MusicBot.Module
                 guildUser
             );
 
-            await DJService.Add(reservedData);
+            DJService.Join(guild.Id, voiceChannel.);
+            await DJService.Add(guild.Id, new Uri(url));
             EnqueueAndPlay(reservedData, voiceChannel);
 
             return SendAnswer(_success,
