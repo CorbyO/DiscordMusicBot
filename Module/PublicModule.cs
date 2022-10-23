@@ -225,7 +225,6 @@ namespace MusicBot.Module
             searchListRequest.Type = "video";
             searchListRequest.VideoDefinition = SearchResource.ListRequest.VideoDefinitionEnum.Any;
             searchListRequest.VideoDimension = SearchResource.ListRequest.VideoDimensionEnum.Value2d;
-            searchListRequest.VideoCaption = SearchResource.ListRequest.VideoCaptionEnum.ClosedCaption;
             searchListRequest.Order = SearchResource.ListRequest.OrderEnum.ViewCount;
             searchListRequest.VideoCategoryId = "10";
 
