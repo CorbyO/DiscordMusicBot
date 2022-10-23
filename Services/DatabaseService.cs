@@ -17,11 +17,13 @@ namespace MusicBot.Services
 
         public readonly struct ReservedData
         {
-            public readonly SearchResult SearchResult;
+            public readonly Uri Uri;
+            public readonly string Title;
             public readonly IUser User;
-            public ReservedData(SearchResult SearchResult, IUser User)
+            public ReservedData(Uri uri, string title, IUser User)
             {
-                this.SearchResult = SearchResult;
+                this.Uri = uri;
+                this.Title = title;
                 this.User = User;
             }
         }

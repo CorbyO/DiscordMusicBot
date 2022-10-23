@@ -31,8 +31,11 @@ namespace MusicBot.Module
         [Alias("ㄷㅇㅁ", "ㄷ", "ehdnaakf", "eda", "e", "?")]
         public Task PrintHelp()
         {
-            var embed = new EmbedFieldBuilder[4]
+            var embed = new EmbedFieldBuilder[5]
             {
+                new EmbedFieldBuilder()
+                    .WithName(":small_blue_diamond: %재생 <링크>: 해당 유튜브 링크를 실행합니다.")
+                    .WithValue("줄임: ㅈㅅ, ㅈ, wotod, wt, w"),
                 new EmbedFieldBuilder()
                     .WithName(":small_blue_diamond: %검색 <검색어>: 검색어를 유튜브에서 찾습니다.")
                     .WithValue("줄임: ㄳ, ㄱㅅ, ㄱ, rjator, rt, r, search"),
@@ -101,7 +104,7 @@ namespace MusicBot.Module
 
             foreach (var i in DatabaseService[Context.Guild.Id].Queue)
             {
-                sb.AppendLine(i.SearchResult.Snippet.Title);
+                sb.AppendLine(i.Title);
             }
 
             return ReplyAsync(sb.ToString());
@@ -127,6 +130,12 @@ namespace MusicBot.Module
             var result = searchResult.SearchResultOrNull[index];
             searchResult.Empty();
             if (result == null) return SendAnswer(_error, "먼저 '%검색' 명령어로 검색을 해 주세요.");
+            var reservedData = new DatabaseService.ReservedData
+            (
+                new Uri($"https://www.youtube.com/watch?v={result?.Id?.VideoId}"),
+                result.Snippet.Title.Trim(),
+                guildUser
+            );
 
             var voiceChannel = guildUser.VoiceChannel;
             if (voiceChannel == null) return SendAnswer(_error, "음성 채널에 들어가 있어야 합니다.");
@@ -137,20 +146,60 @@ namespace MusicBot.Module
                 {
                     new EmbedBuilder()
                         .WithAuthor("노래 선택")
-                        .WithTitle($"{result?.Snippet?.Title?.Trim()}")
+                        .WithTitle(reservedData.Title)
                         .WithThumbnailUrl(result?.Snippet?.Thumbnails?.Medium?.Url)
                         .WithColor(Color.DarkRed)
                         .WithDescription($"[{result?.Snippet?.ChannelTitle}](https://www.youtube.com/channel/{result?.Snippet?.ChannelId})")
-                        .WithUrl($"https://www.youtube.com/watch?v={result?.Id?.VideoId}")
+                        .WithUrl(reservedData.Uri.ToString())
                         .WithFooter("선택한 노래가 대기열에 추가 되었습니다.")
                         .Build()
                 };
             });
 
             // enqueue
-            EnqueueAndPlay(new DatabaseService.ReservedData(result, guildUser), voiceChannel);
+            EnqueueAndPlay(reservedData, voiceChannel);
 
             return temp;
+        }
+
+        [Command("재생")]
+        [Alias("ㅈㅅ", "ㅈ", "wotod", "wt", "w")]
+        public Task PlayURL([Remainder] string url)
+        {
+            Context.Message.AddReactionAsync(_process);
+            var guildUser = Context.User as IGuildUser;
+            var guild = Context.Guild;
+
+            if (guildUser == null) return SendAnswer(_error, "알 수 없는 오류");
+            var voiceChannel = guildUser.VoiceChannel;
+            if (voiceChannel == null) return SendAnswer(_error, "음성 채널에 들어가 있어야 합니다.");
+            var youtubeID = url.ToYoutubeID();
+            if (youtubeID == null) return SendAnswer(_error, "유효한 유튜브 링크가 아닙니다.");
+
+            var list = YouTubeService.Videos.List("snippet");
+            list.Id = youtubeID;
+            var response = list.Execute();
+            var result = response.Items[0];
+            
+            var reservedData = new DatabaseService.ReservedData
+            (
+                new Uri(url),
+                result.Snippet.Title.Trim(),
+                guildUser
+            );
+
+            EnqueueAndPlay(reservedData, voiceChannel);
+
+            return SendAnswer(_success,
+                new EmbedBuilder()
+                    .WithAuthor("노래 선택")
+                    .WithTitle(reservedData.Title)
+                    .WithThumbnailUrl(result?.Snippet?.Thumbnails?.Medium?.Url)
+                    .WithColor(Color.DarkRed)
+                    .WithDescription($"[{result?.Snippet?.ChannelTitle}](https://www.youtube.com/channel/{result?.Snippet?.ChannelId})")
+                    .WithUrl(url)
+                    .WithFooter("선택한 노래가 대기열에 추가 되었습니다.")
+            );
         }
 
         [Command("스킵")]
@@ -240,7 +289,7 @@ namespace MusicBot.Module
                     var reservedData = queue.Dequeue();
 
                     // youtube audio download
-                    string query = $"https://www.youtube.com/watch?v={reservedData.SearchResult.Id.VideoId}";
+                    string query = reservedData.Uri.ToString();
                     bool wellFormedUri = Uri.IsWellFormedUriString(query, UriKind.Absolute);
 
                     var tracks = await TrackLoader.LoadAudioTrack(query, fromUrl: wellFormedUri);

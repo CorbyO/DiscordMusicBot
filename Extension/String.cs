@@ -49,5 +49,16 @@ namespace MusicBot.Extension
 
             throw new CommandInvalidException("Invalid number.");
         }
+
+        public static string ToYoutubeID(this string value)
+        {
+            if (value.StartsWith("https://www.youtube.com/watch?v="))
+                return value.Substring(32);
+
+            if (value.StartsWith("https://youtu.be/"))
+                return value.Substring(17);
+
+            return null;
+        }
     }
 }
