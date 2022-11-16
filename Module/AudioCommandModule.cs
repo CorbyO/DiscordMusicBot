@@ -67,9 +67,9 @@ namespace MusicBot.Module
 
             StringBuilder sb = new("대기중인 노래 리스트\n");
 
-            foreach (var i in DatabaseService[Context.Guild.Id].Queue)
+            foreach (var i in queue)
             {
-                sb.AppendLine(i.Title);
+                sb.AppendLine(i.Info.Title);
             }
 
             await ReplyAsync(sb.ToString());
@@ -94,9 +94,8 @@ namespace MusicBot.Module
                 var snippet = result.Snippet;
                 var title = snippet.Title;
 
-                var uri = $"https://www.youtube.com/watch?v={result.Id.VideoId}";
+                var url = $"https://www.youtube.com/watch?v={result.Id.VideoId}";
                 searchResult.Empty();
-                var reservedData = new DatabaseService.ReservedData(new Uri(uri), title);
 
                 var temp = SendAnswer(Emojis.Success, msg, (x) =>
                 {
@@ -108,14 +107,14 @@ namespace MusicBot.Module
                             .WithThumbnailUrl(snippet.Thumbnails.High.Url)
                             .WithColor(Color.DarkRed)
                             .WithDescription($"[{snippet.ChannelTitle}](https://www.youtube.com/channel/{snippet.ChannelId})")
-                            .WithUrl(uri)
+                            .WithUrl(url)
                             .WithFooter("선택한 노래가 대기열에 추가 되었습니다.")
                             .Build()
                     };
                 });
 
                 // enqueue
-                EnqueueAndPlay(reservedData, voiceChannel);
+                EnqueueAndPlay(url, voiceChannel);
             }
             catch (Exception e)
             {
@@ -138,8 +137,6 @@ namespace MusicBot.Module
                 var result = list.Execute().Items[0];
                 var snippet = result.Snippet;
                 var title = snippet.Title;
-                
-                var reservedData = new DatabaseService.ReservedData(new Uri(url), title);
 
                 await SendAnswer(Emojis.Success,new EmbedBuilder()
                     .WithAuthor("노래 선택")
@@ -151,7 +148,7 @@ namespace MusicBot.Module
                     .WithFooter("선택한 노래가 대기열에 추가 되었습니다.")
                 );
 
-                EnqueueAndPlay(reservedData, voiceChannel);
+                EnqueueAndPlay(url, voiceChannel);
             }
             catch (Exception e)
             {
@@ -225,45 +222,47 @@ namespace MusicBot.Module
                 .WithFooter("듣고 싶은 노래를 %숫자 로 선택 해주세요.");
         }
 
-        private async void EnqueueAndPlay(DatabaseService.ReservedData reservedData, IVoiceChannel voiceChannel)
+        private async void EnqueueAndPlay(string url, IVoiceChannel voiceChannel)
         {
+            // youtube audio download
+            bool wellFormedUri = Uri.IsWellFormedUriString(url, UriKind.Absolute);
+            var tracks = await TrackLoader.LoadAudioTrack(url, fromUrl: wellFormedUri);
             var guild = DatabaseService[Context.Guild.Id];
-            guild.Queue.Enqueue(reservedData);
+
+            foreach (var track in tracks)
+            {
+                guild.Queue.Enqueue(track);
+            }
+            tracks = null;
+
             if (!guild.IsPlaying)
             {
                 var audioClient = await voiceChannel.ConnectAsync();
-                PlayQueue(audioClient, guild.Queue);
+                PlayQueue(audioClient);
             }
         }
 
-        private async void PlayQueue(IAudioClient audioClient, Queue<DatabaseService.ReservedData> queue)
+        private async void PlayQueue(IAudioClient audioClient)
         {
             var guild = DatabaseService[Context.Guild.Id];
             using (var discordStream = audioClient.CreatePCMStream(AudioApplication.Music))
             {
                 guild.AudioPlayer = new AudioPlayer(audioClient);
+                var queue = guild.Queue;
                 while (queue.Count > 0)
                 {
-                    var reservedData = queue.Dequeue();
+                    var track = queue.Dequeue();
+                    await ReplyAsync(embed: new EmbedBuilder()
+                        .WithAuthor("노래 재생")
+                        .WithTitle(track.Info.Title)
+                        .WithUrl(track.Url)
+                        .WithThumbnailUrl(track.Info.ThumbnailUrl)
+                        .WithColor(Color.Blue)
+                        .WithDescription(track.Info.Duration.ToInt().ToSecond().ToMMSS())
+                        .Build());
+                    await guild.AudioPlayer.StartTrackAsync(track);
 
-                    // youtube audio download
-                    string query = reservedData.Uri.ToString();
-                    bool wellFormedUri = Uri.IsWellFormedUriString(query, UriKind.Absolute);
-
-                    var tracks = await TrackLoader.LoadAudioTrack(query, fromUrl: wellFormedUri);
-
-                    foreach (var track in tracks)
-                    {
-                        await ReplyAsync(embed: new EmbedBuilder()
-                            .WithAuthor("노래 재생")
-                            .WithTitle(track.Info.Title)
-                            .WithUrl(query)
-                            .WithThumbnailUrl(track.Info.ThumbnailUrl)
-                            .WithColor(Color.Blue)
-                            .WithDescription(track.Info.Duration.ToInt().ToSecond().ToMMSS())
-                            .Build());
-                        await guild.AudioPlayer.StartTrackAsync(track);
-                    }
+                    track.Dispose();
                 }
                 guild.AudioPlayer = null;
             }
